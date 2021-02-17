@@ -1,68 +1,52 @@
 // src/Library/Logger.ts
-export enum LogMode {
-  DEBUG,
-  INFO,
-  WARN,
-  ERROR,
+import * as winston from 'winston';
+import LokiTransport from 'winston-loki';
+
+export enum LogLevel {
+  SILLY = 'silly',
+  DEBUG = 'debug',
+  INFO = 'info',
+  WARN = 'warn',
+  ERROR = 'error',
 }
 
-/**
- * Return the Enum variant of the LogMode enum
- * @param value LogMode value string 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'
- *
- * @returns equivalent LogMode Enum value
- */
-function getLogMode(value?: string | LogMode): LogMode {
-  switch (value) {
-    case 'DEBUG':
-      return LogMode.DEBUG;
-    case 'INFO':
-      return LogMode.INFO;
-    case 'WARN':
-      return LogMode.WARN;
-    case 'ERROR':
-      return LogMode.ERROR;
-    default:
-      return process.env.NODE_ENV === 'production'
-        ? LogMode.WARN
-        : LogMode.INFO;
-  }
+function isKeyOf<Obj extends { [key: string]: string }, K extends keyof Obj>(
+  obj: Obj,
+  key: K | string,
+): key is K {
+  return Object.keys(obj).includes(key as string);
 }
 
-export class Logger {
-  public logMode: LogMode;
-
-  public constructor() {
-    this.logMode = getLogMode(process.env.LOG_MODE);
+function getLevel(value: string): LogLevel {
+  if (isKeyOf(LogLevel, value)) {
+    return LogLevel[value];
   }
 
-  /**
-   * Log to console if minimum log mode is met
-   * @param mode Minimum log mode to print to console
-   * @param msg String message to log to console
-   * @param args Extra varaibles and values
-   *
-   */
-  public log(mode: LogMode, msg: string, ...args: unknown[]): void {
-    if (mode < this.logMode) {
-      return;
-    }
-
-    switch (mode) {
-      case LogMode.DEBUG:
-        console.debug(msg, ...args);
-        break;
-      case LogMode.INFO:
-        console.info(msg, ...args);
-        break;
-      case LogMode.WARN:
-        console.warn(msg, ...args);
-        break;
-      case LogMode.ERROR:
-        console.error(msg, ...args);
-        break;
-    }
-  }
+  return process.env.NODE_ENV === 'production' ? LogLevel.INFO : LogLevel.DEBUG;
 }
 
-export const logger = new Logger();
+export const logger = winston.createLogger({
+  level: getLevel(process.env.LOG_LEVEL),
+  defaultMeta: {
+    appName: 'TS-ESWeb',
+  },
+  transports: [
+    //
+    // - Write all logs with level `error` and below to `error.log`
+    // - Write all logs with level `info` and below to `combined.log`
+    //
+    new winston.transports.Console({
+      level: 'silly',
+      format: winston.format.prettyPrint({
+        colorize: true,
+      }),
+    }),
+    new LokiTransport({
+      host: 'http://Loki:3100',
+      format: winston.format.json({}),
+      labels: { appName: 'TS-ESWeb' },
+      json: false,
+      replaceTimestamp: true,
+    }),
+  ],
+});
